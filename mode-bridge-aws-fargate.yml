@@ -121,11 +121,11 @@
                   awslogs-stream-prefix: !Ref AWS::StackName
               Secrets:
                 - Name: MODE_ACCESS_TOKEN
-                  ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/mode/${Environment}/MODE_ACCESS_TOKEN 
+                  ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/MODE_ACCESS_TOKEN 
                 - Name: MODE_TOKEN_SECRET
-                  ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/mode/${Environment}/MODE_TOKEN_SECRET
+                  ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/MODE_TOKEN_SECRET
                 - Name: MODE_SERVER
-                  ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/mode/${Environment}/MODE_SERVER
+                  ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/MODE_SERVER
               LinuxParameters:
                 InitProcessEnabled: true
           Tags:

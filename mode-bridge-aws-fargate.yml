@@ -1,0 +1,153 @@
+---
+    AWSTemplateFormatVersion: 2010-09-09
+    
+    Parameters:
+      Cluster:
+        Type: String
+    
+      DesiredCount:
+        Type: Number
+        Default: 1
+    
+      LaunchType:
+        Type: String
+        Default: Fargate
+        AllowedValues:
+          - Fargate
+          - EC2
+
+      SourceSecurityGroup:
+        Type: AWS::EC2::SecurityGroup::Id
+    
+      Subnets:
+        Type: List<AWS::EC2::Subnet::Id>
+    
+      Environment:
+        Type: String
+    
+      ArnKmsKey:
+        Type: String
+    
+    Conditions:
+      Fargate: !Equals [ !Ref LaunchType, "Fargate" ]
+    
+      EC2: !Equals [ !Ref LaunchType, "EC2" ]
+    
+    Resources:
+    
+      TaskExecutionRole:
+        Type: AWS::IAM::Role
+        Properties:
+          Path: /
+          AssumeRolePolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action: sts:AssumeRole
+                Effect: Allow
+                Principal:
+                  Service: ecs-tasks.amazonaws.com
+          ManagedPolicyArns:
+            - 'arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess'
+            - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+          Policies:
+            - PolicyName: ECSParameterStore
+              PolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - ssm:DescribeParameters
+                    Resource: '*'
+                  - Effect: Allow
+                    Action:
+                      - ssm:GetParameters
+                      - ssm:GetParametersByPath 
+                    Resource:
+                      - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+                  - Effect: Allow
+                    Action:
+                      - kms:Decrypt
+                    Resource:
+                      - !Ref ArnKmsKey
+            - PolicyName: EcrAccessPolicy
+              PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - ecr:*
+                    Resource: '*'
+            - PolicyName: EcsExecAccess
+              PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - ssmmessages:CreateControlChannel
+                      - ssmmessages:CreateDataChannel
+                      - ssmmessages:OpenControlChannel
+                      - ssmmessages:OpenDataChannel
+                    Resource: '*'
+          Tags:
+            - Key: Environment
+              Value: !Ref Environment
+    
+      LogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+          LogGroupName: !Sub /ecs/${AWS::StackName}-mode-db-tools 
+    
+      TaskDefinitionMode:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+          Family: !Sub ${AWS::StackName}-mode
+          RequiresCompatibilities:
+            - !If [ Fargate, "FARGATE", "EC2" ]
+          Memory: 1024
+          Cpu: 512
+          NetworkMode: !If [ Fargate, "awsvpc", "bridge" ]
+          ExecutionRoleArn: !Ref TaskExecutionRole
+          TaskRoleArn: !Ref TaskExecutionRole
+          ContainerDefinitions:
+            - Name: mode
+              Image: modeanalytics/bridge-client:latest
+              Essential: true
+              Memory: 1024
+              LogConfiguration:
+                LogDriver: awslogs
+                Options:
+                  awslogs-region: !Ref AWS::Region
+                  awslogs-group: !Ref LogGroup
+                  awslogs-stream-prefix: !Ref AWS::StackName
+              Secrets:
+                - Name: MODE_ACCESS_TOKEN
+                  ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/mode/${Environment}/MODE_ACCESS_TOKEN 
+                - Name: MODE_TOKEN_SECRET
+                  ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/mode/${Environment}/MODE_TOKEN_SECRET
+                - Name: MODE_SERVER
+                  ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/mode/${Environment}/MODE_SERVER
+              LinuxParameters:
+                InitProcessEnabled: true
+          Tags:
+            - Key: Environment
+              Value: !Ref Environment
+    
+      FargateServiceMode:
+        Type: AWS::ECS::Service
+        Condition: Fargate
+        Properties:
+          Cluster: !Ref Cluster
+          DesiredCount: 1
+          TaskDefinition: !Ref TaskDefinitionMode
+          EnableExecuteCommand: true
+          LaunchType: !Ref LaunchType
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              AssignPublicIp: ENABLED
+              SecurityGroups:
+                - !Ref SourceSecurityGroup
+              Subnets: !Ref Subnets      
+          Tags:
+            - Key: Environment
+              Value: !Ref Environment
+    
